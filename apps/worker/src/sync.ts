@@ -1,0 +1,35 @@
+import { PrismaClient, SyncKind, SyncStatus } from "@prisma/client";
+import type { InstagramDataProvider, ProviderAccount, ProviderInsight, ProviderMedia, ProviderMediaInsight } from "@social-ops/instagram-data";
+import type { SyncJobData } from "@social-ops/shared";
+
+const prisma = new PrismaClient();
+export { prisma };
+
+function metricKey(accountId: string, date: Date, metricType: string, mediaId?: string): string { return `${mediaId ? `media:${mediaId}` : "account"}:${accountId}:${date.toISOString().slice(0, 10)}:${metricType}`; }
+function fromDate(value?: string): Date { return value ? new Date(value) : new Date(Date.now() - 90 * 86400000); }
+function toDate(value?: string): Date { return value ? new Date(value) : new Date(); }
+
+export async function syncAccounts(provider: InstagramDataProvider, data: SyncJobData): Promise<number> {
+  const target = data.instagramAccountId ? await prisma.instagramAccount.findFirst({ where: { id: data.instagramAccountId, organizationId: data.organizationId }, select: { instagramUserId: true } }) : null;
+  let cursor: string | undefined; let processed = 0;
+  do { const page = await provider.listAccounts(cursor); for (const account of page.data) { if (target && account.providerAccountId !== target.instagramUserId) continue; const existing = await prisma.instagramAccount.findUnique({ where: { instagramUserId: account.providerAccountId } }); if (existing && existing.organizationId !== data.organizationId) continue; await prisma.instagramAccount.upsert({ where: { instagramUserId: account.providerAccountId }, update: { username: account.username, displayName: account.displayName, profilePictureUrl: account.profileImageUrl, accountType: account.accountType, followers: account.followers, following: account.following, mediaCount: account.mediaCount, dataIsMock: account.isMock, lastSyncedAt: new Date(), lastSyncFailedAt: null, lastSyncError: null, connectionStatus: "CONNECTED" }, create: { organizationId: data.organizationId, instagramUserId: account.providerAccountId, username: account.username, displayName: account.displayName, profilePictureUrl: account.profileImageUrl, accountType: account.accountType, followers: account.followers, following: account.following, mediaCount: account.mediaCount, dataIsMock: account.isMock, connectedAt: new Date(), lastSyncedAt: new Date(), connectionStatus: "CONNECTED" } }); processed++; } cursor = page.nextCursor ?? undefined; } while (cursor); return processed;
+}
+
+export async function syncMedia(provider: InstagramDataProvider, data: SyncJobData): Promise<number> {
+  const accounts = await prisma.instagramAccount.findMany({ where: { organizationId: data.organizationId, ...(data.instagramAccountId ? { id: data.instagramAccountId } : {}) } }); let processed = 0;
+  for (const account of accounts) { let cursor: string | undefined; do { const page = await provider.listMedia(account.instagramUserId, cursor, data.from ? fromDate(data.from) : undefined); for (const media of page.data) { await upsertMedia(account.organizationId, account.id, media); processed++; } cursor = page.nextCursor ?? undefined; } while (cursor); }
+  return processed;
+}
+
+async function upsertMedia(organizationId: string, accountId: string, media: ProviderMedia): Promise<void> { await prisma.instagramMedia.upsert({ where: { instagramAccountId_instagramMediaId: { instagramAccountId: accountId, instagramMediaId: media.providerMediaId } }, update: { mediaType: media.mediaType, mediaFormat: media.mediaFormat, caption: media.caption, permalink: media.permalink, mediaUrl: media.mediaUrl, thumbnailUrl: media.thumbnailUrl, publishedAt: media.publishedAt, lastSyncedAt: new Date(), isMock: media.isMock }, create: { organizationId, instagramAccountId: accountId, instagramMediaId: media.providerMediaId, mediaType: media.mediaType, mediaFormat: media.mediaFormat, caption: media.caption, permalink: media.permalink, mediaUrl: media.mediaUrl, thumbnailUrl: media.thumbnailUrl, publishedAt: media.publishedAt, lastSyncedAt: new Date(), isMock: media.isMock } }); }
+
+export async function syncInsights(provider: InstagramDataProvider, data: SyncJobData): Promise<number> {
+  const accounts = await prisma.instagramAccount.findMany({ where: { organizationId: data.organizationId, ...(data.instagramAccountId ? { id: data.instagramAccountId } : {}) }, include: { media: true } }); let processed = 0; const from = fromDate(data.from); const to = toDate(data.to);
+  for (const account of accounts) { const accountInsights = await provider.getAccountInsights(account.instagramUserId, from, to); for (const insight of accountInsights) { await upsertInsight(account.organizationId, account.id, insight); processed++; } for (const media of account.media) { const mediaInsights = await provider.getMediaInsights(account.instagramUserId, media.instagramMediaId); for (const insight of mediaInsights) { await upsertMediaInsight(account.organizationId, account.id, insight); processed++; } } }
+  return processed;
+}
+
+async function upsertInsight(organizationId: string, accountId: string, insight: ProviderInsight): Promise<void> { await prisma.instagramInsight.upsert({ where: { metricKey: metricKey(accountId, insight.date, insight.metricType) }, update: { value: insight.value, isMock: insight.isMock, date: insight.date }, create: { metricKey: metricKey(accountId, insight.date, insight.metricType), organizationId, instagramAccountId: accountId, date: insight.date, metricType: insight.metricType, value: insight.value, isMock: insight.isMock } }); }
+async function upsertMediaInsight(organizationId: string, accountId: string, insight: ProviderMediaInsight): Promise<void> { await prisma.instagramInsight.upsert({ where: { metricKey: metricKey(accountId, insight.date, insight.metricType, insight.providerMediaId) }, update: { value: insight.value, isMock: insight.isMock, date: insight.date }, create: { metricKey: metricKey(accountId, insight.date, insight.metricType, insight.providerMediaId), organizationId, instagramAccountId: accountId, instagramMediaId: insight.providerMediaId, date: insight.date, metricType: insight.metricType, value: insight.value, isMock: insight.isMock } }); }
+
+export async function processSyncJob(kind: SyncKind, data: SyncJobData, provider: InstagramDataProvider): Promise<number> { await prisma.syncRun.update({ where: { id: data.syncRunId }, data: { status: SyncStatus.RUNNING, startedAt: new Date(), provider: provider.name, isMock: provider.name === "mock" } }); try { const recordsProcessed = kind === SyncKind.ACCOUNT ? await syncAccounts(provider, data) : kind === SyncKind.MEDIA ? await syncMedia(provider, data) : await syncInsights(provider, data); await prisma.syncRun.update({ where: { id: data.syncRunId }, data: { status: SyncStatus.COMPLETED, completedAt: new Date(), recordsProcessed } }); return recordsProcessed; } catch (error) { await prisma.syncRun.update({ where: { id: data.syncRunId }, data: { status: SyncStatus.FAILED, completedAt: new Date(), error: error instanceof Error ? error.message.slice(0, 240) : "SYNC_FAILED" } }); throw error; } }

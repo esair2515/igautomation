@@ -1,0 +1,14 @@
+CREATE TYPE "ContentStatus_new" AS ENUM ('DRAFT', 'READY', 'SCHEDULED', 'PUBLISHING', 'PUBLISHED', 'FAILED', 'CANCELLED', 'ARCHIVED');
+ALTER TABLE "Content" ALTER COLUMN "status" DROP DEFAULT;
+ALTER TABLE "Content" ALTER COLUMN "status" TYPE "ContentStatus_new" USING ("status"::text::"ContentStatus_new");
+ALTER TABLE "Content" ALTER COLUMN "status" SET DEFAULT 'DRAFT';
+ALTER TABLE "ContentVariant" ALTER COLUMN "status" DROP DEFAULT;
+ALTER TABLE "ContentVariant" ALTER COLUMN "status" TYPE "ContentStatus_new" USING ("status"::text::"ContentStatus_new");
+ALTER TABLE "ContentVariant" ALTER COLUMN "status" SET DEFAULT 'DRAFT';
+DROP TYPE "ContentStatus";
+ALTER TYPE "ContentStatus_new" RENAME TO "ContentStatus";
+ALTER TYPE "JobStatus" ADD VALUE 'PUBLISHING';
+ALTER TABLE "Content" ADD COLUMN "sourceDraftId" TEXT;
+ALTER TABLE "ScheduledPost" ADD COLUMN "lastAttemptAt" TIMESTAMP(3), ADD COLUMN "externalPostId" TEXT;
+CREATE UNIQUE INDEX "Content_sourceDraftId_key" ON "Content"("sourceDraftId");
+ALTER TABLE "Content" ADD CONSTRAINT "Content_sourceDraftId_fkey" FOREIGN KEY ("sourceDraftId") REFERENCES "AIDraft"("id") ON DELETE SET NULL ON UPDATE CASCADE;

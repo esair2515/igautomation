@@ -1,0 +1,21 @@
+{
+  "name": "social-ops-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/*", "packages/*"],
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "dev": "pnpm --filter @social-ops/shared build && pnpm --filter @social-ops/publishing build && concurrently -n web,api,worker -c blue,green,magenta \"pnpm --filter @social-ops/web dev\" \"pnpm --filter @social-ops/api dev\" \"pnpm --filter @social-ops/worker dev\"",
+    "build": "pnpm --filter @social-ops/shared build && pnpm --filter @social-ops/publishing build && pnpm --filter @social-ops/web build && pnpm --filter @social-ops/api build && pnpm --filter @social-ops/worker build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "db:generate": "pnpm --filter @social-ops/database db:generate",
+    "db:migrate": "pnpm --filter @social-ops/database db:migrate",
+    "db:seed": "pnpm --filter @social-ops/database db:seed",
+    "db:seed:mock": "pnpm --filter @social-ops/database db:seed:mock"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  }
+}

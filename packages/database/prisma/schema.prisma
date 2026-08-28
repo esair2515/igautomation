@@ -1,0 +1,445 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+enum UserStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+enum ConnectionStatus {
+  CONNECTED
+  RECONNECT_REQUIRED
+  DISCONNECTED
+}
+enum AutomationMode {
+  ACTIVE
+  PAUSED
+}
+enum ContentType {
+  POST
+  REEL
+  STORY
+}
+enum ContentStatus {
+  DRAFT
+  READY
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  CANCELLED
+  ARCHIVED
+}
+enum JobStatus {
+  QUEUED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  CANCELED
+}
+enum SyncKind {
+  ACCOUNT
+  MEDIA
+  INSIGHTS
+}
+enum SyncStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+enum AIContentType {
+  CAPTION
+  POST_CONCEPT
+  STORY
+  REEL
+  CAPTION_VARIATIONS
+  HASHTAGS
+  CONTENT_IDEAS
+}
+enum AIGenerationStatus {
+  SUCCEEDED
+  FAILED
+}
+enum AIDraftStatus {
+  DRAFT
+  ARCHIVED
+}
+
+model User {
+  id String @id @default(cuid())
+  name String
+  email String @unique
+  passwordHash String
+  role Role @default(VIEWER)
+  status UserStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLoginAt DateTime?
+  memberships OrganizationMember[]
+  createdContent Content[]
+  auditLogs AuditLog[]
+  sessions Session[]
+  sentInvitations Invitation[]
+  oauthStates OAuthState[]
+  aiDrafts AIDraft[]
+  aiGenerations AIGeneration[]
+}
+
+model Organization {
+  id String @id @default(cuid())
+  name String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members OrganizationMember[]
+  accounts InstagramAccount[]
+  campuses CampusProfile[]
+  content Content[]
+  auditLogs AuditLog[]
+  sessions Session[]
+  invitations Invitation[]
+  oauthStates OAuthState[]
+  media InstagramMedia[]
+  insights InstagramInsight[]
+  syncRuns SyncRun[]
+  aiDrafts AIDraft[]
+  aiGenerations AIGeneration[]
+  aiUsageCounters AIUsageCounter[]
+}
+
+model OrganizationMember {
+  id String @id @default(cuid())
+  organizationId String
+  userId String
+  role Role
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([organizationId, userId])
+}
+
+model Session {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  userId String
+  organizationId String
+  expiresAt DateTime
+  lastSeenAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@index([userId, revokedAt])
+  @@index([organizationId])
+}
+
+model OAuthState {
+  id String @id @default(cuid())
+  stateHash String @unique
+  userId String
+  organizationId String
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@index([organizationId, consumedAt])
+  @@index([expiresAt])
+}
+
+model Invitation {
+  id String @id @default(cuid())
+  organizationId String
+  invitedById String
+  email String
+  name String
+  role Role
+  tokenHash String @unique
+  expiresAt DateTime
+  acceptedAt DateTime?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy User @relation(fields: [invitedById], references: [id])
+  @@index([organizationId, email])
+}
+
+model InstagramAccount {
+  id String @id @default(cuid())
+  organizationId String
+  instagramUserId String @unique
+  facebookPageId String?
+  username String
+  displayName String?
+  profilePictureUrl String?
+  accountType String?
+  connectedAt DateTime?
+  lastSyncedAt DateTime?
+  connectionStatus ConnectionStatus @default(DISCONNECTED)
+  automationMode AutomationMode @default(ACTIVE)
+  encryptedAccessToken String?
+  tokenKeyVersion Int @default(1)
+  tokenExpiresAt DateTime?
+  lastSyncFailedAt DateTime?
+  lastSyncError String?
+  lastConnectionError String?
+  followers Int?
+  following Int?
+  mediaCount Int?
+  dataIsMock Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campusId String?
+  campus CampusProfile? @relation(fields: [campusId], references: [id])
+  contentVariants ContentVariant[]
+  scheduledPosts ScheduledPost[]
+  analytics Analytics[]
+  auditLogs AuditLog[]
+  media InstagramMedia[]
+  insights InstagramInsight[]
+  syncRuns SyncRun[]
+  aiDrafts AIDraft[]
+  aiGenerations AIGeneration[]
+}
+
+model InstagramMedia {
+  id String @id @default(cuid())
+  organizationId String
+  instagramAccountId String
+  instagramMediaId String @unique
+  mediaType String
+  mediaFormat String
+  caption String?
+  permalink String?
+  mediaUrl String?
+  thumbnailUrl String?
+  publishedAt DateTime
+  lastSyncedAt DateTime
+  likeCount Int?
+  commentCount Int?
+  isMock Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  account InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+  insights InstagramInsight[]
+  @@unique([instagramAccountId, instagramMediaId])
+  @@index([organizationId, publishedAt])
+  @@index([instagramAccountId, publishedAt])
+}
+
+model InstagramInsight {
+  id String @id @default(cuid())
+  metricKey String @unique
+  organizationId String
+  instagramAccountId String
+  instagramMediaId String?
+  date DateTime
+  metricType String
+  value Float
+  isMock Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  account InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+  media InstagramMedia? @relation(fields: [instagramMediaId], references: [instagramMediaId])
+  @@index([organizationId, date, metricType])
+  @@index([instagramAccountId, date, metricType])
+  @@index([instagramMediaId, metricType])
+}
+
+model SyncRun {
+  id String @id @default(cuid())
+  organizationId String
+  instagramAccountId String?
+  jobId String?
+  kind SyncKind
+  status SyncStatus @default(QUEUED)
+  provider String
+  isMock Boolean @default(false)
+  startedAt DateTime?
+  completedAt DateTime?
+  recordsProcessed Int @default(0)
+  error String?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  account InstagramAccount? @relation(fields: [instagramAccountId], references: [id], onDelete: SetNull)
+  @@index([organizationId, createdAt])
+  @@index([instagramAccountId, kind, createdAt])
+}
+
+model AIGeneration {
+  id String @id @default(cuid())
+  organizationId String
+  createdById String
+  instagramAccountId String
+  contentType AIContentType
+  provider String
+  modelId String?
+  status AIGenerationStatus
+  promptMetadata Json
+  result Json?
+  error String?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id])
+  account InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+  drafts AIDraft[]
+  @@index([organizationId, createdAt])
+  @@index([organizationId, instagramAccountId, contentType, createdAt])
+}
+
+model AIDraft {
+  id String @id @default(cuid())
+  organizationId String
+  createdById String
+  instagramAccountId String
+  generationId String?
+  contentType AIContentType
+  generatedContent Json
+  editedContent Json
+  provider String
+  modelId String?
+  promptMetadata Json
+  status AIDraftStatus @default(DRAFT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  content Content?
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id])
+  account InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+  generation AIGeneration? @relation(fields: [generationId], references: [id], onDelete: SetNull)
+  @@index([organizationId, updatedAt])
+  @@index([organizationId, instagramAccountId, updatedAt])
+  @@index([createdById, updatedAt])
+}
+
+model AIUsageCounter {
+  id String @id @default(cuid())
+  organizationId String
+  periodStart DateTime
+  generationCount Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@unique([organizationId, periodStart])
+  @@index([organizationId, periodStart])
+}
+
+model CampusProfile {
+  id String @id @default(cuid())
+  organizationId String
+  name String
+  shortName String
+  location String?
+  tone String
+  targetAudience String?
+  brandGuidelines String?
+  prohibitedClaims String?
+  preferredHashtags String?
+  preferredCTA String?
+  timezone String @default("UTC")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  accounts InstagramAccount[]
+  variants ContentVariant[]
+}
+
+model Content {
+  id String @id @default(cuid())
+  organizationId String
+  createdById String
+  title String
+  type ContentType
+  caption String?
+  sourceDraftId String? @unique
+  status ContentStatus @default(DRAFT)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id])
+  sourceDraft AIDraft? @relation(fields: [sourceDraftId], references: [id], onDelete: SetNull)
+  variants ContentVariant[]
+  scheduledPosts ScheduledPost[]
+}
+
+model ContentVariant {
+  id String @id @default(cuid())
+  contentId String
+  instagramAccountId String
+  campusProfileId String?
+  caption String?
+  media Json?
+  status ContentStatus @default(DRAFT)
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  account InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+  campus CampusProfile? @relation(fields: [campusProfileId], references: [id])
+  @@unique([contentId, instagramAccountId])
+}
+
+model ScheduledPost {
+  id String @id @default(cuid())
+  contentId String
+  instagramAccountId String
+  scheduledFor DateTime
+  timezone String
+  status JobStatus @default(QUEUED)
+  bullmqJobId String?
+  retryCount Int @default(0)
+  lastAttemptAt DateTime?
+  publishedAt DateTime?
+  externalPostId String?
+  failureReason String?
+  idempotencyKey String @unique
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  account InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+  @@index([scheduledFor, status])
+}
+
+model Analytics {
+  id String @id @default(cuid())
+  instagramAccountId String
+  date DateTime
+  impressions Int?
+  reach Int?
+  engagement Int?
+  followers Int?
+  followerGrowth Int?
+  profileActivity Int?
+  linkClicks Int?
+  videoViews Int?
+  storyReplies Int?
+  account InstagramAccount @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+  @@unique([instagramAccountId, date])
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+  organizationId String
+  actorId String?
+  action String
+  accountId String?
+  resource String
+  resourceId String?
+  metadata Json?
+  ip String?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorId], references: [id])
+  account InstagramAccount? @relation(fields: [accountId], references: [id])
+  @@index([organizationId, createdAt])
+}

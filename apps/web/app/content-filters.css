@@ -1,0 +1,2 @@
+.library-filters { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }.library-filters select { width:auto; }
+@media(max-width:600px){.library-filters{width:100%}.library-filters select{flex:1}.library-search{width:100%}.library-search input{flex:1}}

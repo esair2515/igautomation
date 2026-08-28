@@ -1,0 +1,7 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { MockMetaProvider } from "./index";
+
+test("mock provider paginates deterministic accounts and media", async () => { const provider = new MockMetaProvider(); const first = await provider.listAccounts(); assert.equal(first.data.length, 6); assert.equal(first.nextCursor, null); const mediaFirst = await provider.listMedia(first.data[0].providerAccountId); assert.equal(mediaFirst.data.length, 10); assert.ok(mediaFirst.nextCursor); const mediaSecond = await provider.listMedia(first.data[0].providerAccountId, mediaFirst.nextCursor!); assert.equal(mediaSecond.data[0].providerMediaId, "mock-media-1-11"); });
+test("mock provider returns historical metrics with stable values", async () => { const provider = new MockMetaProvider(); const from = new Date(Date.now() - 10 * 86400000); const to = new Date(); const first = await provider.getAccountInsights("mock-ig-1", from, to); const second = await provider.getAccountInsights("mock-ig-1", from, to); assert.deepEqual(first, second); assert.ok(first.some((item) => item.metricType === "FOLLOWERS")); });
+test("mock provider supports controlled failures", async () => { const previous = process.env.MOCK_META_FAILURE; process.env.MOCK_META_FAILURE = "media"; const provider = new MockMetaProvider(); await assert.rejects(() => provider.listMedia("mock-ig-1"), /MOCK_MEDIA_FAILURE/); process.env.MOCK_META_FAILURE = previous; });
